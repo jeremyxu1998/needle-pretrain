@@ -1,10 +1,16 @@
 """The module.
 """
-from typing import List
+from typing import List, Optional
 from needle.autograd import Tensor
 from needle import ops
 import needle.init as init
 import numpy as np
+
+from collections import Counter
+import pprint
+import json
+
+from .backend_selection import array_api, NDArray
 
 
 class Parameter(Tensor):
@@ -72,6 +78,90 @@ class Module:
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+    
+    def id(self):
+        """construct a json string that uniquely identifies the module."""
+        # Create a counter for each module's class name
+        count = Counter()
+
+        # Create a dictionary to store the signatures of the module's parameters
+        signatures = dict()
+
+        # Add the class name of the module to the dictionary
+        signatures[self.__class__.__name__] = dict()
+
+        # Set the current dictionary to the inner dictionary that was just created
+        signatures = signatures[self.__class__.__name__]
+
+        # Iterate through the attributes of the module
+        for k, v in self.__dict__.items():
+            # If the attribute is a module, increment the counter and add its signature to the dictionary
+            if isinstance(v, Module):
+                count[v.__class__.__name__] += 1
+                name = v.__class__.__name__ + '-' + str(count[v.__class__.__name__])
+                signatures[name] = v.id()
+            # If the attribute is a parameter, add its shape to the dictionary
+            elif isinstance(v, Parameter):
+                name = k
+                signatures[name] = v.shape
+            # If the attribute is a list or tuple, iterate through its elements
+            # and add the signatures of the modules and parameters to the dictionary
+            elif isinstance(v, (list, tuple)):
+                for i, x in enumerate(v):
+                    if isinstance(x, Module):
+                        count[x.__class__.__name__] += 1
+                        name = x.__class__.__name__ + '-' + str(count[x.__class__.__name__])
+                        signatures[name] = x.id()
+                    elif isinstance(x, Parameter):
+                        name = k
+                        signatures[name] = x.shape
+        # Return the dictionary containing the signatures of the module's parameters
+        return signatures
+
+    def state_dict(self, prefix=""):
+        """Return a dictionary of the module's parameters."""
+        # Create an empty dictionary to store the state of the model
+        state_dict = {}
+        # Create a counter for each module's class name
+        count = Counter()
+
+        # Iterate through all the attributes of the module
+        for k, v in self.__dict__.items():
+            # If the attribute is a parameter, add it to the dictionary
+            if isinstance(v, Parameter):
+                name = k
+                state_dict[prefix + name] = v
+            # If the attribute is a module, increment the counter and add the module and its parameters to the dictionary
+            elif isinstance(v, Module):
+                count[v.__class__.__name__] += 1
+                name = v.__class__.__name__ + '-' + str(count[v.__class__.__name__])
+                state_dict.update(v.state_dict(prefix + name + "."))
+        return state_dict
+
+    def load_state_dict(self, state_dict):
+        """
+        Iterate over the module's parameters and submodules and load the values from the  state_dict.
+        
+        Args:
+            state_dict (dict): A dictionary containing the values to load.
+        """
+        # Get a dictionary of the module's parameters
+        this = self.state_dict()
+        # Iterate through the values in the state_dict
+        for k, v in state_dict.items():
+            # If the value is a parameter of the module, set its value to the value from the state_dict
+            if k in this:
+                this[k].data = Tensor(NDArray(v, device=self.device), device=self.device, requires_grad=True)
+            else:
+                # If the value is not a parameter of the module, raise an error
+                raise KeyError("State dict does not contain key: " + k)
+
+    def summary(self):
+        """Print a summary of the module."""
+        id = self.id()
+        pp = pprint.PrettyPrinter(indent=2)
+        pp.pprint(id)
+        return json.dumps(id)
 
 
 class Identity(Module):
@@ -90,6 +180,12 @@ class Linear(Module):
         ### BEGIN YOUR SOLUTION
         raise NotImplementedError()
         ### END YOUR SOLUTION
+
+    def load_weights(self, W: Tensor, b: Tensor):
+        assert W.shape == self.weight.shape and W.device == self.weight.device and W.dtype == self.weight.dtype
+        assert b.shape == self.bias.shape and b.device == self.bias.device and b.dtype == self.bias.dtype
+        self.weight = Parameter(W)
+        self.bias = Parameter(b)
 
     def forward(self, X: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
@@ -155,6 +251,17 @@ class BatchNorm1d(Module):
         ### BEGIN YOUR SOLUTION
         raise NotImplementedError()
         ### END YOUR SOLUTION
+
+    def load_weights(self, W: Tensor, b: Tensor, r_mean: Optional[Tensor] = None, r_var: Optional[Tensor] = None):
+        assert W.shape == self.weight.shape and W.device == self.weight.device and W.dtype == self.weight.dtype
+        assert b.shape == self.bias.shape and b.device == self.bias.device and b.dtype == self.bias.dtype
+        self.weight = Parameter(W)
+        self.bias = Parameter(b)
+        if r_mean != None and r_var != None:
+            assert r_mean.shape == self.running_mean.shape and r_mean.device == self.running_mean.device and r_mean.dtype == self.running_mean.dtype
+            assert r_var.shape == self.running_var.shape and r_var.device == self.running_var.device and r_var.dtype == self.running_var.dtype
+            self.weight = r_mean
+            self.bias = r_var
 
     def forward(self, x: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
@@ -232,6 +339,13 @@ class Conv(Module):
         ### BEGIN YOUR SOLUTION
         raise NotImplementedError()
         ### END YOUR SOLUTION
+
+    def load_weights(self, W: Tensor, b: Optional[Tensor] = None):
+        assert W.shape == self.weight.shape and W.device == self.weight.device and W.dtype == self.weight.dtype
+        self.weight = Parameter(W)
+        if b != None:
+            assert b.shape == self.bias.shape and b.device == self.bias.device and b.dtype == self.bias.dtype
+            self.bias = Parameter(b)
 
     def forward(self, x: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
