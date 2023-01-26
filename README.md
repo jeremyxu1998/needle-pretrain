@@ -1,7 +1,7 @@
-# Deep Learning System - Final Project
+# Deep Learning Systems - Final Project
 
 ## Overview
-This is a course project for the CMU [10-714 Deep Learning System](https://dlsyscourse.org/).
+This is a course project for the CMU [10-714 Deep Learning Systems](https://dlsyscourse.org/).
 
 The goal of this project is to support the "NEEDLE" deep learning framework with pretrained weights and architectures, completed with [@guomk](https://github.com/guomk) and [@ElvishElvis](https://github.com/ElvishElvis). Please refer to our [project report](report.ipynb) for detailed description of this project.
 
